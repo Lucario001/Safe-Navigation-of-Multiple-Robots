@@ -9,6 +9,7 @@ import time
 import sim_interface
 import numpy as np
 import cvxopt
+import robot_params
 
 def main():
     
@@ -24,8 +25,8 @@ def main():
     curpos = cvxopt.matrix([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
     goalpos = cvxopt.matrix([4.5, 6.5, 4.5, 2.5, 4.5, 4.5, 4.5, 0.5, 0.5, 2.5, 0.5, 6.5, 0.5, 0.5, 0.5, 4.5])
     
-    tolerance = 0.05                                                             # Tolerance
-    d = 1.0
+    tolerance = np.sqrt(robot_params.goal_threshold ** 2 * N)                                                          # Tolerance
+    d = 0.8
     alpha = 0.1
     
 
@@ -48,8 +49,8 @@ def main():
             V, W = list_robots[i].get_cbf_controller()
             predicted_u_dot[2 * i], predicted_u_dot[2 * i + 1] = V * np.cos(list_robots[i].current_state[2]) - l * W * np.sin(list_robots[i].current_state[2]), V * np.sin(list_robots[i].current_state[2]) + l * W * np.cos(list_robots[i].current_state[2])
             
-        g = [[0.0 for _ in range(N * (N - 1) // 2)] for _ in range(2 * N)]
-        h_t = [0.0 for _ in range(N * (N - 1) // 2)]
+        g = [[0.0 for _ in range(N * (N - 1) // 2 + 2 * N)] for _ in range(2 * N)]
+        h_t = [0.0 for _ in range(N * (N - 1) // 2 + 2 * N)]
         index = 0
         for i in range(N - 1):
             for j in range(i + 1, N):
@@ -58,11 +59,17 @@ def main():
                 cbf = (curpos[2 * i] - curpos[2 * j]) ** 2 + (curpos[2 * i + 1] - curpos[2 * j + 1]) ** 2 - d ** 2
                 h_t[index] = alpha * cbf
                 index += 1
+        for i in range(N):
+            g[2 * i][index] = - 10 + 2 * curpos[2 * i]
+            g[2 * i + 1][index + 1] = - 10 + 2 * curpos[2 * i + 1]
+            h_t[index] = (curpos[2 * i] - 0.25) * (9.75 - curpos[2 * i])
+            h_t[index + 1] = (curpos[2 * i + 1] - 0.25) * (9.75 - curpos[2 * i + 1])
+            index += 2
         G = cvxopt.matrix(g)
         h = cvxopt.matrix(h_t)
         q = - 2 * predicted_u_dot
-    
         u_dot = cvxopt.solvers.qp(P = P, q = q, G = G, h = h)['x']
+        #print(np.array(u_dot).reshape(len(u_dot),))
         cvxopt.solvers.options['show_progress'] = False
         if (sim_interface.start_simulation()):
             for i in range(N):
@@ -75,6 +82,10 @@ def main():
             print(np.array(h).reshape(len(h),))
         else:
             print ('Failed to start simulation')
+    time.sleep(5.0)
+    sim_interface.sim_shutdown()
+    time.sleep(2.0)
         
 if __name__ == '__main__':
     main()
+    print('Program ended')
